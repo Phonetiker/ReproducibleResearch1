@@ -1,0 +1,173 @@
+---
+title: 'Reproducible Research: Report on Course Project 1'
+author: "Stephen Tobin"
+date: "February 5, 2016"
+output: html_document
+---
+
+## Overview: 
+In this project report I present some descriptive statistics and plots of a personal movement dataset, which was previously collected with the use of activity monitoring devices.
+
+The document is divided into the following sections. The subheadings refer to questions that are answered in each section:
+
+1. Loading and Processing the Data
+
+        How should the data be loaded and preprocessed?
+        
+2. Descriptive Statistics and Plots
+
+        What is mean total number of steps taken per day?
+        
+        What is the average daily activity pattern?
+        
+3. Imputing Missing Data
+
+        How can values missing from a data set be imputed?
+        
+4. Splitting the Data
+
+        Are there differences in activity patterns between weekdays and weekends?
+
+### 1. Loading and Preprocessing the Data
+In this section, we respond to the question of how the data should be loaded and processed. The data set to be analyzed is available at the following URL, which I last accessed on February 5th, 2015:
+
+https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip
+
+The dataset contains the following variables:
+
+1. **steps**: Number of steps taking in a 5-minute interval (missing values are coded as NA)
+2. **date**: The date on which the measurement was taken in YYYY-MM-DD format
+3. **interval**: Identifier for the 5-minute interval in which measurement was taken
+
+The following code chunk checks whether the relevant file is already in the workspace. If it is not, the file is downloaded from its URL into the current folder, unzipped and loaded into the workspace. Finally, for simplicity, a new copy of the resulting dataframe is made, in which cases containing NAs are removed, in order to make subsequent processing easier (although we were officially encouraged simply to ignore the missing values at this stage). Later, we will return to the original dataframe to consider another way of handling missing data.
+
+```{r echo=TRUE}
+## First check if the file already exist in the workspace
+if(!(exists("act"))) {
+        ## If it does not exist, download the zip from its URL
+        fileURL <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+        download.file(fileURL, destfile="./repdata%2Fdata%2Factivity.zip")
+        ## Then unzip it
+        unzip("repdata%2Fdata%2Factivity.zip", overwrite = TRUE, junkpaths = FALSE, exdir = ".")
+        ## Then load the data into the workspace 
+        act <- read.csv("activity.csv")
+}
+
+## Remove the NAs and save into a new dataframe by taking a subset of the 
+## original data frame: only the cases that do not contain any "NA" values.
+act1 <- act[complete.cases(act),]
+
+```
+
+### 2. Descriptive statistics and plots
+In this section, we first determine the total number of steps taken each day. We do this by calling the function *ddply* from the *plyr* package. This function allows us to create a new dataframe containing a summary of an existing dataframe by applying functions to particular dataframe variables. We can specify whichever grouping factors are relevant, while ignoring any irrelevant factors. 
+
+Then we plot a histogram of the data, and finally calculate the mean and median total number of steps taken each day.
+
+
+``` {r echo=TRUE}
+## Make sure the package 'dplyr' is loaded
+require("plyr")
+```
+
+``` {r echo=TRUE}
+## Sum steps for each date (across all intervals)
+dsum <- ddply(act1, .(date), summarise, Sdsum = sum(steps))
+
+## Plot a histogram of the total daily steps
+hist(dsum$Sdsum, main="Histogram of total daily steps", xlab="Total Daily Steps")
+
+## Calculate the mean and median of this variable
+dmn <- mean(dsum$Sdsum)
+dmd <- median(dsum$Sdsum)
+print(dmn)
+print(dmd)
+## Add the mean to the histogram for fun
+abline(v = dmn, col="blue", lwd=2)
+```
+
+Next we consider what the average daily activity pattern is. We do this by getting the mean number of steps per interval using *ddply*. We are averaging across *days*.Then we plot a time series line graph, showing time interval along the X-axis and mean steps along the Y-axis.
+
+``` {r echo=TRUE}
+## Get the mean steps by interval (across all days)
+dmean <- ddply(act1, .(interval), summarise, Sdmn = mean(steps))
+
+## Plot the mean steps by interval, ensuring that the option  "type" is set to "l" so that we get a line plot.
+plot(dmean$interval, dmean$Sdmn, type="l", main = "Mean steps per time interval", ylab="Mean Steps", xlab="Interval (sec)")
+```
+
+### 3. Imputing Missing Data
+We now return to the original data set in order to consider an alternative to simply removing all cases in which there is missing data. First we calculate and report the number of data points that are missing. Next we calculate the mean number of steps at each level of the factor *interval*.  Then we assign the appropriate mean number of steps to each missing value, so that the mean number of steps at *interval 5* replaces all those NAs at *interval 5*, the mean of steps at *interval 10* replaces all those NAs at *interval 10*, and so on. We call the function *ddply* one more time on the resulting dataframe, as before, to obtain the total steps taken each day. 
+
+Finally, we plot a histogram of the total daily steps and calculate the  mean and median of this new dataset.
+
+``` {r echo=TRUE}
+## Calculate the number of missing values
+MV <- sum(is.na(act$steps))
+print(MV)
+
+## Replace the missing values by imputation with the mean for the relevant interval
+## Create a new dataframe from this imputed dataset
+intervals <- unique(act1$interval)
+actb <- act
+for (x in (intervals[1]:intervals[length(intervals)])) {
+actb$steps[is.na(actb$steps)==TRUE & actb$interval==intervals[x]] <- mean(act1$steps[act1$interval==intervals[x]])
+}
+
+## For the new data set, sum steps by date (across all intervals)
+dsumN <- ddply(actb, .(date), summarise, Sdsum = sum(steps))
+
+## Plot a histogram of the new total daily steps
+hist(dsumN$Sdsum, main="Histogram of total daily steps", xlab="Total Daily Steps")
+
+## Calculate the new mean and median of this variable
+dmnN <- mean(dsumN$Sdsum)
+dmdN <- median(dsumN$Sdsum)
+print(dmnN)
+print(dmdN)
+```
+
+We see that the median increased slightly, while the mean remained the same. Whereas in the original dataset, the median was slightly below the mean, in this revised dataset, the mean and median are equal.
+
+### 4. Splitting the Data
+In this last section of the project, we create a new factor in the dataset. We divide the data up depending on whether it was collected on a weekday or a weekend. We then create a plot containing two panels. The first contains a line plot of the mean total **weekday** steps (Y-axis) across time intervals (X-axis), while the second contains a parallel plot for **weekends**.
+
+``` {r echo=TRUE}
+## In a new dataframe, create a new variable to divide the data 
+## between weekdays and weekends. Initially, fill it with NAs.
+actbd <- actb
+actbd$wd <- as.character("NA")
+
+## Using a 'for' loop, assign the value "we" to all cases in which
+## the 'date' variable corresponds to a Saturday or a Sunday. For 
+## all other days, assign the value "wd".
+for (j in 1:dim(actbd)[1]) {
+        if (weekdays(as.POSIXlt(actbd$date[j])) %in% c("Saturday", "Sunday")) {
+                actbd$wd[j] <- "we"
+        }
+        else {
+                actbd$wd[j] <- "wd"
+        }
+}
+
+## For ease of subsequent processing, make this variable a factor
+actbd$wd <- as.factor(actbd$wd)
+
+## As before, we use ddply to summarize the data by interval and 'day type'
+dmeandN <- ddply(actbd, .(interval, wd), summarise, Sdmn = mean(steps))
+
+## Create a panel plot of mean steps per day for (i) weekdays and (ii) weekends
+## First, set up the panels and outer margins
+par(mfrow=c(2,1), oma=c(1,1,1,1))
+
+## Then create the two plots
+plot(dmeandN[dmeandN$wd=="wd",]$interval, dmeandN[dmeandN$wd=="wd",]$Sdmn, type="l", main = "Mean steps per time interval \nWeekday", ylab="Mean Steps", xlab = "", mar=c(2.5,4,2.5,2.5), ylim=c(0, 250))
+plot(dmeandN[dmeandN$wd=="we",]$interval, dmeandN[dmeandN$wd=="we",]$Sdmn, type="l", main = "Weekend", ylab="Mean Steps", xlab="Interval (sec)", ylim=c(0, 250))
+```
+
+In response to the question of whether there are different activity patterns between weekdays and weekends, we see that just after interval 500, there is an increase in mean total steps in the *weekday* plot, but not in the *weekend* plot. In the 700-800 interval range, the *weekday* mean reaches a peak of over 225 steps per 5-minute interval. Within that same range, the *weekend* mean has a sequences of two peaks, neither of which exceeds 200 steps per 5-minute interval. Within the 1000-1800 interval range, the mean *weekend* steps fluctuate considerably, but the values appear appreciably higher than the mean *weekday* steps during the same time interval. At interval 1800, however, the *weekday* plot peaks somewhat higher than the *weekend* plot. Perhaps expectedly, the *weekday* step mean reaches a (somewhat noisy) floor value earlier (at around interval 2000) than the *weekend* step mean (at around interval 2200).
+
+``` {r echo=TRUE}
+## Remember to close your plotting device when you are done!
+dev.off()
+```
